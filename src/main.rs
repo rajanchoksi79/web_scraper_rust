@@ -1,23 +1,29 @@
-use std::future::Future;
-use trpl::Html;
+use trpl::{Either, Html};
 
-fn page_title(url: &str) -> impl Future<Output = Option<String>> {
-    async move {
-        let response_text = trpl::get(url).await.text().await;
-        Html::parse(&response_text)
-            .select_first("title")
-            .map(|title_element| title_element.inner_html())
-    }
+async fn page_title(url: &str) -> (&str, Option<String>) {
+    let response_text = trpl::get(url).await.text().await;
+    let head = Html::parse(&response_text)
+        .select_first("head")
+        .map(|title_element| title_element.inner_html());
+    (url, head)
 }
 
 fn main() {
     let arguments: Vec<String> = std::env::args().collect();
 
     trpl::run(async {
-        let web_url = &arguments[1];
-        match page_title(&web_url).await {
-            Some(title) => println!("The title of {web_url} is {title}"),
-            None => println!("{web_url} has no title"),
+        let web_url_one = page_title(&arguments[1]);
+        let web_url_two = page_title(&arguments[2]);
+
+        let (url, maybe_head) = match trpl::race(web_url_one, web_url_two).await {
+            Either::Left(left) => left,
+            Either::Right(right) => right,
+        };
+
+        println!("{url} returned first!");
+        match maybe_head {
+            Some(head) => println!("head tag of given url is: \n{head}"),
+            None => println!("it's head tag could not be parsed"),
         }
     });
 }
